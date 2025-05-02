@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visualizador de Precipitación</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            padding: 20px;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        .selectors {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        select {
+            padding: 8px;
+            font-size: 16px;
+            min-width: 250px;
+        }
+        button {
+            padding: 10px 15px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .chart-container {
+            width: 100%;
+            height: 500px;
+        }
+        .info-box {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Visualizador de Precipitación Mensual</h1>
+        
+        <div class="selectors">
+            <div>
+                <label for="departamento">Departamento:</label>
+                <select id="departamento" onchange="cargarMunicipios()">
+                    <option value="">Seleccione un departamento</option>
+                </select>
+            </div>
+            
+            <div>
+                <label for="municipio">Municipio:</label>
+                <select id="municipio" disabled>
+                    <option value="">Seleccione un municipio</option>
+                </select>
+            </div>
+            
+            <button onclick="graficarDatos()">Graficar Datos</button>
+        </div>
+        
+        <div class="chart-container">
+            <canvas id="precipitacionChart"></canvas>
+        </div>
+        
+        <div class="info-box" id="infoBox" style="display: none;">
+            <h3>Información Adicional</h3>
+            <p id="infoText"></p>
+        </div>
+    </div>
+
+    <script>
+        // Datos del JSON (aquí deberías cargar tu archivo JSON completo)
+        const datosEstaciones = [
+            // Ejemplo de estructura (debes reemplazar con tus datos completos)
+            {
+                "CODIGO": "47067010",
+                "CATEGORIA": "LM",
+                "ESTACIÓN": "El Encanto",
+                "MUNICIPIO": "El Encanto",
+                "DEPARTAMENTO": "Amazonas",
+                "AO": 7,
+                "ALTITUD (m)": 120,
+                "LONGITUD": -73.2,
+                "LATITUD": -1.77,
+                "ENE": 180.2,
+                "FEB": 218.5,
+                "MAR": 302.6,
+                "ABR": 324.2,
+                "MAY": 341.6,
+                "JUN": 300.2,
+                "JUL": 258.8,
+                "AGO": 201.3,
+                "SEP": 194.1,
+                "OCT": 211.4,
+                "NOV": 255.3,
+                "DIC": 269,
+                "ANUAL": 3057.1,
+                "Número de meses": 310,
+                "% de cumplimiento": "86.10%"
+            },
+            // ... más datos de estaciones ...
+        ];
+
+        // Variable para el gráfico
+        let precipitacionChart = null;
+
+        // Cargar departamentos al iniciar la página
+        window.onload = function() {
+            cargarDepartamentos();
+        };
+
+        // Función para cargar departamentos en el select
+        function cargarDepartamentos() {
+            const selectDepto = document.getElementById('departamento');
+            const departamentos = [...new Set(datosEstaciones.map(est => est.DEPARTAMENTO))];
+            
+            departamentos.forEach(depto => {
+                const option = document.createElement('option');
+                option.value = depto;
+                option.textContent = depto;
+                selectDepto.appendChild(option);
+            });
+        }
+
+        // Función para cargar municipios según el departamento seleccionado
+        function cargarMunicipios() {
+            const selectDepto = document.getElementById('departamento');
+            const selectMuni = document.getElementById('municipio');
+            
+            selectMuni.innerHTML = '<option value="">Seleccione un municipio</option>';
+            selectMuni.disabled = !selectDepto.value;
+            
+            if (!selectDepto.value) return;
+            
+            const municipios = [...new Set(
+                datosEstaciones
+                    .filter(est => est.DEPARTAMENTO === selectDepto.value)
+                    .map(est => est.MUNICIPIO)
+            )];
+            
+            municipios.forEach(muni => {
+                const option = document.createElement('option');
+                option.value = muni;
+                option.textContent = muni;
+                selectMuni.appendChild(option);
+            });
+        }
+
+        // Función para graficar los datos
+        function graficarDatos() {
+            const selectDepto = document.getElementById('departamento');
+            const selectMuni = document.getElementById('municipio');
+            
+            if (!selectDepto.value || !selectMuni.value) {
+                alert('Por favor seleccione un departamento y un municipio');
+                return;
+            }
+            
+            // Buscar la estación correspondiente
+            const estacion = datosEstaciones.find(est => 
+                est.DEPARTAMENTO === selectDepto.value && 
+                est.MUNICIPIO === selectMuni.value
+            );
+            
+            if (!estacion) {
+                alert('No se encontraron datos para esta ubicación');
+                return;
+            }
+            
+            // Datos para el gráfico
+            const meses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+            const precipitaciones = [
+                estacion.ENE, estacion.FEB, estacion.MAR, estacion.ABR, 
+                estacion.MAY, estacion.JUN, estacion.JUL, estacion.AGO, 
+                estacion.SEP, estacion.OCT, estacion.NOV, estacion.DIC
+            ];
+            
+            // Configuración del gráfico
+            const ctx = document.getElementById('precipitacionChart').getContext('2d');
+            
+            // Destruir el gráfico anterior si existe
+            if (precipitacionChart) {
+                precipitacionChart.destroy();
+            }
+            
+            // Crear nuevo gráfico
+            precipitacionChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: meses,
+                    datasets: [{
+                        label: `Precipitación (mm) - ${estacion.ESTACIÓN}`,
+                        data: precipitaciones,
+                        backgroundColor: 'rgba(54, 162, 235, 0.7)',
+                        borderColor: 'rgba(54, 162, 235, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Precipitación (mm)'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Meses del año'
+                            }
+                        }
+                    },
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `${context.dataset.label}: ${context.raw} mm`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+            
+            // Mostrar información adicional
+            document.getElementById('infoBox').style.display = 'block';
+            document.getElementById('infoText').innerHTML = `
+                <strong>Estación:</strong> ${estacion.ESTACIÓN}<br>
+                <strong>Categoría:</strong> ${estacion.CATEGORIA}<br>
+                <strong>Altitud:</strong> ${estacion['ALTITUD (m)']} m<br>
+                <strong>Precipitación anual:</strong> ${estacion.ANUAL} mm<br>
+                <strong>% de cumplimiento:</strong> ${estacion['% de cumplimiento']}
+            `;
+        }
+    </script>
+</body>
+</html>
