@@ -3,6 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>Visualizador de Precipitación</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
@@ -22,6 +25,7 @@
             display: flex;
             gap: 20px;
             margin-bottom: 20px;
+            flex-wrap: wrap;
         }
         select {
             padding: 8px;
@@ -49,11 +53,19 @@
             border-radius: 5px;
             margin-top: 20px;
         }
+        .loading {
+            display: none;
+            margin: 20px 0;
+            font-style: italic;
+            color: #666;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Visualizador de Precipitación Mensual</h1>
+        
+        <div class="loading" id="loading">Cargando datos meteorológicos...</div>
         
         <div class="selectors">
             <div>
@@ -67,6 +79,13 @@
                 <label for="municipio">Municipio:</label>
                 <select id="municipio" disabled>
                     <option value="">Seleccione un municipio</option>
+                </select>
+            </div>
+            
+            <div>
+                <label for="estacion">Estación:</label>
+                <select id="estacion" disabled>
+                    <option value="">Seleccione una estación</option>
                 </select>
             </div>
             
@@ -84,50 +103,82 @@
     </div>
 
     <script>
-        // Datos del JSON (aquí deberías cargar tu archivo JSON completo)
-        const datosEstaciones = [
-            // Ejemplo de estructura (debes reemplazar con tus datos completos)
-            {
-                "CODIGO": "47067010",
-                "CATEGORIA": "LM",
-                "ESTACIÓN": "El Encanto",
-                "MUNICIPIO": "El Encanto",
-                "DEPARTAMENTO": "Amazonas",
-                "AO": 7,
-                "ALTITUD (m)": 120,
-                "LONGITUD": -73.2,
-                "LATITUD": -1.77,
-                "ENE": 180.2,
-                "FEB": 218.5,
-                "MAR": 302.6,
-                "ABR": 324.2,
-                "MAY": 341.6,
-                "JUN": 300.2,
-                "JUL": 258.8,
-                "AGO": 201.3,
-                "SEP": 194.1,
-                "OCT": 211.4,
-                "NOV": 255.3,
-                "DIC": 269,
-                "ANUAL": 3057.1,
-                "Número de meses": 310,
-                "% de cumplimiento": "86.10%"
-            },
-            // ... más datos de estaciones ...
-        ];
-
         // Variable para el gráfico
         let precipitacionChart = null;
+        let datosEstaciones = [];
 
-        // Cargar departamentos al iniciar la página
+        // Cargar datos al iniciar la página
         window.onload = function() {
-            cargarDepartamentos();
+            cargarDatosMeteorologicos();
         };
+
+        // Función para cargar los datos (sin caché)
+        function cargarDatosMeteorologicos() {
+            document.getElementById('loading').style.display = 'block';
+            
+            // Usamos un timestamp para evitar caché
+            const timestamp = new Date().getTime();
+            fetch(`IDEAMpr.json?nocache=${timestamp}`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Error al cargar los datos');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    // Limpiar y estandarizar los datos
+                    datosEstaciones = data.map(item => {
+                        // Convertir el objeto de cadena única a objeto estructurado
+                        if (typeof item === 'string' || (typeof item === 'object' && !Array.isArray(item) && item !== null)) {
+                            // Esto maneja el caso donde los datos vienen como un string largo
+                            const parts = Object.values(item)[0].split(';');
+                            return {
+                                "CODIGO": parts[0],
+                                "CATEGORIA": parts[1],
+                                "ESTACIÓN": parts[2],
+                                "MUNICIPIO": parts[3],
+                                "DEPARTAMENTO": parts[4],
+                                "AO": parseInt(parts[5]),
+                                "ALTITUD (m)": parseInt(parts[6]),
+                                "LONGITUD": parseFloat(parts[7]),
+                                "LATITUD": parseFloat(parts[8]),
+                                "ENE": parseFloat(parts[9]),
+                                "FEB": parseFloat(parts[10]),
+                                "MAR": parseFloat(parts[11]),
+                                "ABR": parseFloat(parts[12]),
+                                "MAY": parseFloat(parts[13]),
+                                "JUN": parseFloat(parts[14]),
+                                "JUL": parseFloat(parts[15]),
+                                "AGO": parseFloat(parts[16]),
+                                "SEP": parseFloat(parts[17]),
+                                "OCT": parseFloat(parts[18]),
+                                "NOV": parseFloat(parts[19]),
+                                "DIC": parseFloat(parts[20]),
+                                "ANUAL": parseFloat(parts[21]),
+                                "Número de meses": parseInt(parts[22]),
+                                "% de cumplimiento": parts[23]
+                            };
+                        }
+                        return item;
+                    });
+                    
+                    cargarDepartamentos();
+                    document.getElementById('loading').style.display = 'none';
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    document.getElementById('loading').style.display = 'none';
+                    alert('Error al cargar los datos. Por favor recarga la página.');
+                });
+        }
 
         // Función para cargar departamentos en el select
         function cargarDepartamentos() {
             const selectDepto = document.getElementById('departamento');
-            const departamentos = [...new Set(datosEstaciones.map(est => est.DEPARTAMENTO))];
+            selectDepto.innerHTML = '<option value="">Seleccione un departamento</option>';
+            
+            // Obtener departamentos únicos y ordenados
+            const departamentos = [...new Set(datosEstaciones.map(est => est.DEPARTAMENTO))].sort();
             
             departamentos.forEach(depto => {
                 const option = document.createElement('option');
@@ -141,17 +192,21 @@
         function cargarMunicipios() {
             const selectDepto = document.getElementById('departamento');
             const selectMuni = document.getElementById('municipio');
+            const selectEst = document.getElementById('estacion');
             
             selectMuni.innerHTML = '<option value="">Seleccione un municipio</option>';
+            selectEst.innerHTML = '<option value="">Seleccione una estación</option>';
             selectMuni.disabled = !selectDepto.value;
+            selectEst.disabled = true;
             
             if (!selectDepto.value) return;
             
+            // Obtener municipios únicos y ordenados para el departamento seleccionado
             const municipios = [...new Set(
                 datosEstaciones
                     .filter(est => est.DEPARTAMENTO === selectDepto.value)
                     .map(est => est.MUNICIPIO)
-            )];
+            )].sort();
             
             municipios.forEach(muni => {
                 const option = document.createElement('option');
@@ -159,26 +214,44 @@
                 option.textContent = muni;
                 selectMuni.appendChild(option);
             });
+            
+            // Habilitar selector de estaciones cuando se selecciona municipio
+            selectMuni.onchange = function() {
+                const selectEst = document.getElementById('estacion');
+                selectEst.innerHTML = '<option value="">Seleccione una estación</option>';
+                selectEst.disabled = !this.value;
+                
+                if (!this.value) return;
+                
+                // Obtener estaciones para el municipio seleccionado
+                const estaciones = datosEstaciones.filter(est => 
+                    est.DEPARTAMENTO === selectDepto.value && 
+                    est.MUNICIPIO === this.value
+                );
+                
+                estaciones.forEach(est => {
+                    const option = document.createElement('option');
+                    option.value = est.CODIGO;
+                    option.textContent = `${est.ESTACIÓN} (${est.CATEGORIA})`;
+                    selectEst.appendChild(option);
+                });
+            };
         }
 
         // Función para graficar los datos
         function graficarDatos() {
-            const selectDepto = document.getElementById('departamento');
-            const selectMuni = document.getElementById('municipio');
+            const selectEst = document.getElementById('estacion');
             
-            if (!selectDepto.value || !selectMuni.value) {
-                alert('Por favor seleccione un departamento y un municipio');
+            if (!selectEst.value) {
+                alert('Por favor seleccione una estación');
                 return;
             }
             
             // Buscar la estación correspondiente
-            const estacion = datosEstaciones.find(est => 
-                est.DEPARTAMENTO === selectDepto.value && 
-                est.MUNICIPIO === selectMuni.value
-            );
+            const estacion = datosEstaciones.find(est => est.CODIGO === selectEst.value);
             
             if (!estacion) {
-                alert('No se encontraron datos para esta ubicación');
+                alert('No se encontraron datos para esta estación');
                 return;
             }
             
@@ -233,9 +306,12 @@
                         tooltip: {
                             callbacks: {
                                 label: function(context) {
-                                    return `${context.dataset.label}: ${context.raw} mm`;
+                                    return `${context.dataset.label}: ${context.raw.toFixed(1)} mm`;
                                 }
                             }
+                        },
+                        legend: {
+                            onClick: (e) => e.stopPropagation() // Evitar que desaparezca al hacer clic
                         }
                     }
                 }
@@ -245,10 +321,14 @@
             document.getElementById('infoBox').style.display = 'block';
             document.getElementById('infoText').innerHTML = `
                 <strong>Estación:</strong> ${estacion.ESTACIÓN}<br>
+                <strong>Código:</strong> ${estacion.CODIGO}<br>
                 <strong>Categoría:</strong> ${estacion.CATEGORIA}<br>
-                <strong>Altitud:</strong> ${estacion['ALTITUD (m)']} m<br>
-                <strong>Precipitación anual:</strong> ${estacion.ANUAL} mm<br>
-                <strong>% de cumplimiento:</strong> ${estacion['% de cumplimiento']}
+                <strong>Municipio:</strong> ${estacion.MUNICIPIO}, ${estacion.DEPARTAMENTO}<br>
+                <strong>Altitud:</strong> ${estacion['ALTITUD (m)']} m.s.n.m<br>
+                <strong>Coordenadas:</strong> Lat ${estacion.LATITUD}, Long ${estacion.LONGITUD}<br>
+                <strong>Precipitación anual:</strong> ${estacion.ANUAL.toFixed(1)} mm<br>
+                <strong>% de cumplimiento:</strong> ${estacion['% de cumplimiento']}<br>
+                <strong>Años de registro:</strong> ${estacion.AO}
             `;
         }
     </script>
