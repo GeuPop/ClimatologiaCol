@@ -3,333 +3,274 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-    <meta http-equiv="Pragma" content="no-cache">
-    <meta http-equiv="Expires" content="0">
     <title>Visualizador de Precipitación</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-            padding: 20px;
-        }
-        .container {
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-            max-width: 1000px;
-            margin: 0 auto;
-        }
-        .selectors {
-            display: flex;
-            gap: 20px;
-            margin-bottom: 20px;
-            flex-wrap: wrap;
-        }
-        select {
-            padding: 8px;
-            font-size: 16px;
-            min-width: 250px;
-        }
-        button {
-            padding: 10px 15px;
-            background-color: #4CAF50;
-            color: white;
-            border: none;
-            cursor: pointer;
-            font-size: 16px;
-        }
-        button:hover {
-            background-color: #45a049;
-        }
-        .chart-container {
-            width: 100%;
-            height: 500px;
-        }
-        .info-box {
-            background-color: #f8f9fa;
-            padding: 15px;
-            border-radius: 5px;
-            margin-top: 20px;
-        }
-        .loading {
-            display: none;
-            margin: 20px 0;
-            font-style: italic;
-            color: #666;
-        }
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 1000px; margin: 0 auto; }
+        .selectors { display: flex; gap: 20px; margin-bottom: 20px; flex-wrap: wrap; }
+        select { padding: 8px; font-size: 16px; min-width: 250px; }
+        button { padding: 10px 15px; background-color: #4CAF50; color: white; border: none; cursor: pointer; }
+        .chart-container { width: 100%; height: 500px; margin-top: 20px; }
+        .error { color: red; margin: 10px 0; }
+        .debug { background: #f5f5f5; padding: 10px; margin-top: 20px; font-family: monospace; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Visualizador de Precipitación Mensual</h1>
         
-        <div class="loading" id="loading">Cargando datos meteorológicos...</div>
-        
         <div class="selectors">
             <div>
                 <label for="departamento">Departamento:</label>
-                <select id="departamento" onchange="cargarMunicipios()">
-                    <option value="">Seleccione un departamento</option>
+                <select id="departamento" disabled>
+                    <option value="">Cargando departamentos...</option>
                 </select>
             </div>
             
             <div>
                 <label for="municipio">Municipio:</label>
                 <select id="municipio" disabled>
-                    <option value="">Seleccione un municipio</option>
+                    <option value="">Seleccione un departamento primero</option>
                 </select>
             </div>
             
-            <div>
-                <label for="estacion">Estación:</label>
-                <select id="estacion" disabled>
-                    <option value="">Seleccione una estación</option>
-                </select>
-            </div>
-            
-            <button onclick="graficarDatos()">Graficar Datos</button>
+            <button id="btnGraficar" disabled>Graficar Datos</button>
         </div>
+        
+        <div id="errorMsg" class="error" style="display: none;"></div>
         
         <div class="chart-container">
             <canvas id="precipitacionChart"></canvas>
         </div>
         
-        <div class="info-box" id="infoBox" style="display: none;">
-            <h3>Información Adicional</h3>
-            <p id="infoText"></p>
+        <!-- Área de depuración (opcional) -->
+        <div class="debug" id="debugInfo" style="display: none;">
+            <h3>Información de Depuración</h3>
+            <pre id="debugContent"></pre>
         </div>
     </div>
 
     <script>
-        // Variable para el gráfico
+        // Variables globales
         let precipitacionChart = null;
         let datosEstaciones = [];
-
-        // Cargar datos al iniciar la página
-        window.onload = function() {
-            cargarDatosMeteorologicos();
-        };
-
-        // Función para cargar los datos (sin caché)
-        function cargarDatosMeteorologicos() {
-            document.getElementById('loading').style.display = 'block';
+        
+        // Cuando el documento esté listo
+        document.addEventListener('DOMContentLoaded', function() {
+            // Configurar eventos
+            document.getElementById('departamento').addEventListener('change', cargarMunicipios);
+            document.getElementById('btnGraficar').addEventListener('click', graficarDatos);
             
-            // Usamos un timestamp para evitar caché
-            const timestamp = new Date().getTime();
-            fetch(`IDEAMpr.json?nocache=${timestamp}`)
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error('Error al cargar los datos');
+            // Cargar los datos iniciales
+            cargarDatos();
+        });
+
+        // Función para cargar datos
+        async function cargarDatos() {
+            try {
+                // Mostrar estado de carga
+                document.getElementById('departamento').innerHTML = '<option value="">Cargando datos...</option>';
+                
+                // Cargar el JSON (con timestamp para evitar caché)
+                const response = await fetch('IDEAMpr.json?' + new Date().getTime());
+                
+                if (!response.ok) {
+                    throw new Error(`Error HTTP: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                // Verificar si los datos tienen el formato esperado
+                if (!Array.isArray(data)) {
+                    throw new Error('El formato del JSON no es válido. Se esperaba un array.');
+                }
+                
+                // Procesar los datos
+                datosEstaciones = data.map(item => {
+                    // Si el item es un string (caso del JSON original)
+                    if (typeof item === 'string') {
+                        const partes = item.split(';');
+                        return {
+                            CODIGO: partes[0],
+                            CATEGORIA: partes[1],
+                            ESTACIÓN: partes[2],
+                            MUNICIPIO: partes[3],
+                            DEPARTAMENTO: partes[4],
+                            // ... resto de propiedades
+                        };
                     }
-                    return response.json();
-                })
-                .then(data => {
-                    // Limpiar y estandarizar los datos
-                    datosEstaciones = data.map(item => {
-                        // Convertir el objeto de cadena única a objeto estructurado
-                        if (typeof item === 'string' || (typeof item === 'object' && !Array.isArray(item) && item !== null)) {
-                            // Esto maneja el caso donde los datos vienen como un string largo
-                            const parts = Object.values(item)[0].split(';');
-                            return {
-                                "CODIGO": parts[0],
-                                "CATEGORIA": parts[1],
-                                "ESTACIÓN": parts[2],
-                                "MUNICIPIO": parts[3],
-                                "DEPARTAMENTO": parts[4],
-                                "AO": parseInt(parts[5]),
-                                "ALTITUD (m)": parseInt(parts[6]),
-                                "LONGITUD": parseFloat(parts[7]),
-                                "LATITUD": parseFloat(parts[8]),
-                                "ENE": parseFloat(parts[9]),
-                                "FEB": parseFloat(parts[10]),
-                                "MAR": parseFloat(parts[11]),
-                                "ABR": parseFloat(parts[12]),
-                                "MAY": parseFloat(parts[13]),
-                                "JUN": parseFloat(parts[14]),
-                                "JUL": parseFloat(parts[15]),
-                                "AGO": parseFloat(parts[16]),
-                                "SEP": parseFloat(parts[17]),
-                                "OCT": parseFloat(parts[18]),
-                                "NOV": parseFloat(parts[19]),
-                                "DIC": parseFloat(parts[20]),
-                                "ANUAL": parseFloat(parts[21]),
-                                "Número de meses": parseInt(parts[22]),
-                                "% de cumplimiento": parts[23]
-                            };
-                        }
-                        return item;
-                    });
-                    
-                    cargarDepartamentos();
-                    document.getElementById('loading').style.display = 'none';
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    document.getElementById('loading').style.display = 'none';
-                    alert('Error al cargar los datos. Por favor recarga la página.');
+                    // Si ya es un objeto (formato limpio)
+                    return item;
                 });
+                
+                // Verificar que tenemos datos
+                if (datosEstaciones.length === 0) {
+                    throw new Error('El archivo JSON no contiene datos válidos.');
+                }
+                
+                // Mostrar información de depuración (opcional)
+                mostrarDebugInfo('Datos cargados correctamente', datosEstaciones);
+                
+                // Cargar departamentos
+                cargarDepartamentos();
+                
+            } catch (error) {
+                console.error('Error al cargar datos:', error);
+                mostrarError(`Error al cargar los datos: ${error.message}`);
+                
+                // Mostrar información de depuración del error
+                mostrarDebugInfo('Error al cargar datos', {
+                    error: error.toString(),
+                    stack: error.stack
+                });
+            }
         }
 
-        // Función para cargar departamentos en el select
+        // Función para cargar departamentos
         function cargarDepartamentos() {
             const selectDepto = document.getElementById('departamento');
-            selectDepto.innerHTML = '<option value="">Seleccione un departamento</option>';
             
-            // Obtener departamentos únicos y ordenados
-            const departamentos = [...new Set(datosEstaciones.map(est => est.DEPARTAMENTO))].sort();
-            
-            departamentos.forEach(depto => {
-                const option = document.createElement('option');
-                option.value = depto;
-                option.textContent = depto;
-                selectDepto.appendChild(option);
-            });
+            try {
+                // Obtener departamentos únicos
+                const departamentos = [...new Set(datosEstaciones.map(est => est.DEPARTAMENTO))].sort();
+                
+                // Llenar el select
+                selectDepto.innerHTML = '<option value="">Seleccione un departamento</option>';
+                departamentos.forEach(depto => {
+                    const option = document.createElement('option');
+                    option.value = depto;
+                    option.textContent = depto;
+                    selectDepto.appendChild(option);
+                });
+                
+                // Habilitar controles
+                selectDepto.disabled = false;
+                document.getElementById('btnGraficar').disabled = false;
+                
+            } catch (error) {
+                console.error('Error al cargar departamentos:', error);
+                mostrarError(`Error al cargar departamentos: ${error.message}`);
+            }
         }
 
-        // Función para cargar municipios según el departamento seleccionado
+        // Función para cargar municipios
         function cargarMunicipios() {
             const selectDepto = document.getElementById('departamento');
             const selectMuni = document.getElementById('municipio');
-            const selectEst = document.getElementById('estacion');
             
-            selectMuni.innerHTML = '<option value="">Seleccione un municipio</option>';
-            selectEst.innerHTML = '<option value="">Seleccione una estación</option>';
-            selectMuni.disabled = !selectDepto.value;
-            selectEst.disabled = true;
-            
-            if (!selectDepto.value) return;
-            
-            // Obtener municipios únicos y ordenados para el departamento seleccionado
-            const municipios = [...new Set(
-                datosEstaciones
-                    .filter(est => est.DEPARTAMENTO === selectDepto.value)
-                    .map(est => est.MUNICIPIO)
-            )].sort();
-            
-            municipios.forEach(muni => {
-                const option = document.createElement('option');
-                option.value = muni;
-                option.textContent = muni;
-                selectMuni.appendChild(option);
-            });
-            
-            // Habilitar selector de estaciones cuando se selecciona municipio
-            selectMuni.onchange = function() {
-                const selectEst = document.getElementById('estacion');
-                selectEst.innerHTML = '<option value="">Seleccione una estación</option>';
-                selectEst.disabled = !this.value;
+            try {
+                const deptoSeleccionado = selectDepto.value;
+                if (!deptoSeleccionado) return;
                 
-                if (!this.value) return;
+                // Filtrar municipios del departamento seleccionado
+                const municipios = [...new Set(
+                    datosEstaciones
+                        .filter(est => est.DEPARTAMENTO === deptoSeleccionado)
+                        .map(est => est.MUNICIPIO)
+                )].sort();
                 
-                // Obtener estaciones para el municipio seleccionado
-                const estaciones = datosEstaciones.filter(est => 
-                    est.DEPARTAMENTO === selectDepto.value && 
-                    est.MUNICIPIO === this.value
-                );
-                
-                estaciones.forEach(est => {
+                // Llenar el select
+                selectMuni.innerHTML = '<option value="">Seleccione un municipio</option>';
+                municipios.forEach(muni => {
                     const option = document.createElement('option');
-                    option.value = est.CODIGO;
-                    option.textContent = `${est.ESTACIÓN} (${est.CATEGORIA})`;
-                    selectEst.appendChild(option);
+                    option.value = muni;
+                    option.textContent = muni;
+                    selectMuni.appendChild(option);
                 });
-            };
+                
+                // Habilitar el select
+                selectMuni.disabled = false;
+                
+            } catch (error) {
+                console.error('Error al cargar municipios:', error);
+                mostrarError(`Error al cargar municipios: ${error.message}`);
+            }
         }
 
         // Función para graficar los datos
         function graficarDatos() {
-            const selectEst = document.getElementById('estacion');
+            const selectDepto = document.getElementById('departamento');
+            const selectMuni = document.getElementById('municipio');
             
-            if (!selectEst.value) {
-                alert('Por favor seleccione una estación');
-                return;
-            }
-            
-            // Buscar la estación correspondiente
-            const estacion = datosEstaciones.find(est => est.CODIGO === selectEst.value);
-            
-            if (!estacion) {
-                alert('No se encontraron datos para esta estación');
-                return;
-            }
-            
-            // Datos para el gráfico
-            const meses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
-            const precipitaciones = [
-                estacion.ENE, estacion.FEB, estacion.MAR, estacion.ABR, 
-                estacion.MAY, estacion.JUN, estacion.JUL, estacion.AGO, 
-                estacion.SEP, estacion.OCT, estacion.NOV, estacion.DIC
-            ];
-            
-            // Configuración del gráfico
-            const ctx = document.getElementById('precipitacionChart').getContext('2d');
-            
-            // Destruir el gráfico anterior si existe
-            if (precipitacionChart) {
-                precipitacionChart.destroy();
-            }
-            
-            // Crear nuevo gráfico
-            precipitacionChart = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: meses,
-                    datasets: [{
-                        label: `Precipitación (mm) - ${estacion.ESTACIÓN}`,
-                        data: precipitaciones,
-                        backgroundColor: 'rgba(54, 162, 235, 0.7)',
-                        borderColor: 'rgba(54, 162, 235, 1)',
-                        borderWidth: 1
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            title: {
-                                display: true,
-                                text: 'Precipitación (mm)'
-                            }
-                        },
-                        x: {
-                            title: {
-                                display: true,
-                                text: 'Meses del año'
-                            }
-                        }
+            try {
+                // Validar selección
+                if (!selectDepto.value || !selectMuni.value) {
+                    throw new Error('Por favor seleccione un departamento y un municipio');
+                }
+                
+                // Filtrar estaciones para el municipio seleccionado
+                const estaciones = datosEstaciones.filter(est => 
+                    est.DEPARTAMENTO === selectDepto.value && 
+                    est.MUNICIPIO === selectMuni.value
+                );
+                
+                if (estaciones.length === 0) {
+                    throw new Error('No se encontraron estaciones para esta ubicación');
+                }
+                
+                // Usar la primera estación encontrada (podrías modificar para mostrar múltiples)
+                const estacion = estaciones[0];
+                
+                // Datos para el gráfico
+                const meses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+                const precipitaciones = [
+                    estacion.ENE, estacion.FEB, estacion.MAR, estacion.ABR, 
+                    estacion.MAY, estacion.JUN, estacion.JUL, estacion.AGO, 
+                    estacion.SEP, estacion.OCT, estacion.NOV, estacion.DIC
+                ];
+                
+                // Crear o actualizar el gráfico
+                const ctx = document.getElementById('precipitacionChart').getContext('2d');
+                
+                if (precipitacionChart) {
+                    precipitacionChart.destroy();
+                }
+                
+                precipitacionChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: meses,
+                        datasets: [{
+                            label: `Precipitación (mm) - ${estacion.ESTACIÓN}`,
+                            data: precipitaciones,
+                            backgroundColor: 'rgba(54, 162, 235, 0.7)',
+                            borderColor: 'rgba(54, 162, 235, 1)',
+                            borderWidth: 1
+                        }]
                     },
-                    plugins: {
-                        tooltip: {
-                            callbacks: {
-                                label: function(context) {
-                                    return `${context.dataset.label}: ${context.raw.toFixed(1)} mm`;
-                                }
-                            }
-                        },
-                        legend: {
-                            onClick: (e) => e.stopPropagation() // Evitar que desaparezca al hacer clic
+                    options: {
+                        responsive: true,
+                        scales: {
+                            y: { beginAtZero: true, title: { display: true, text: 'Precipitación (mm)' } },
+                            x: { title: { display: true, text: 'Meses del año' } }
                         }
                     }
-                }
-            });
+                });
+                
+                // Limpiar mensajes de error
+                document.getElementById('errorMsg').style.display = 'none';
+                
+            } catch (error) {
+                console.error('Error al graficar:', error);
+                mostrarError(error.message);
+            }
+        }
+
+        // Función para mostrar errores
+        function mostrarError(mensaje) {
+            const errorElement = document.getElementById('errorMsg');
+            errorElement.textContent = mensaje;
+            errorElement.style.display = 'block';
+        }
+
+        // Función para depuración (opcional)
+        function mostrarDebugInfo(titulo, datos) {
+            const debugElement = document.getElementById('debugInfo');
+            const contentElement = document.getElementById('debugContent');
             
-            // Mostrar información adicional
-            document.getElementById('infoBox').style.display = 'block';
-            document.getElementById('infoText').innerHTML = `
-                <strong>Estación:</strong> ${estacion.ESTACIÓN}<br>
-                <strong>Código:</strong> ${estacion.CODIGO}<br>
-                <strong>Categoría:</strong> ${estacion.CATEGORIA}<br>
-                <strong>Municipio:</strong> ${estacion.MUNICIPIO}, ${estacion.DEPARTAMENTO}<br>
-                <strong>Altitud:</strong> ${estacion['ALTITUD (m)']} m.s.n.m<br>
-                <strong>Coordenadas:</strong> Lat ${estacion.LATITUD}, Long ${estacion.LONGITUD}<br>
-                <strong>Precipitación anual:</strong> ${estacion.ANUAL.toFixed(1)} mm<br>
-                <strong>% de cumplimiento:</strong> ${estacion['% de cumplimiento']}<br>
-                <strong>Años de registro:</strong> ${estacion.AO}
-            `;
+            debugElement.style.display = 'block';
+            contentElement.textContent = `${titulo}:\n${JSON.stringify(datos, null, 2)}`;
         }
     </script>
 </body>
